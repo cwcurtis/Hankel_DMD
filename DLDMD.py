@@ -32,7 +32,7 @@ class DLDMD(keras.Model):
         self.window = self.num_time_steps - (self.num_observables - 1)
 
         self.enc_input = (self.num_time_steps, self.phys_dim)
-        self.dec_input = (self.window-1, self.latent_dim)
+        self.dec_input = (None, self.latent_dim)
 
         if self.precision == 'float32':
             self.precision_complex = tf.complex64
@@ -94,7 +94,7 @@ class DLDMD(keras.Model):
         # Model weights
         weights = self.trainable_weights
 
-        return [y, x_ae, x_adv, y_adv, weights, evals, evecs, phi, dmdloss]
+        return [x_ae, x_adv, y_adv, weights, evals, evecs, phi, dmdloss]
 
     def edmd(self, Y):
         Y_m = Y[:, :, :-1]
@@ -125,8 +125,8 @@ class DLDMD(keras.Model):
         nobs = self.num_observables
         # Perform DMD method.  Note, we need to be careful about how we break the concantenated Hankel matrix apart.
 
-        gm = tf.Variable(tf.zeros([self.num_observables*self.phys_dim, self.batch_size * (self.window - 1)], dtype=self.precision))
-        gp = tf.Variable(tf.zeros([self.num_observables*self.phys_dim, self.batch_size * (self.window - 1)], dtype=self.precision))
+        gm = tf.Variable(tf.zeros([self.num_observables*self.phys_dim, self.batch_size * (winsize - 1)], dtype=self.precision))
+        gp = tf.Variable(tf.zeros([self.num_observables*self.phys_dim, self.batch_size * (winsize - 1)], dtype=self.precision))
 
         for jj in range(self.phys_dim):
             Yobserved = (tf.squeeze(Y[:, jj, :])).numpy()
@@ -148,15 +148,15 @@ class DLDMD(keras.Model):
 
         gpV = gp @ V
         gpVVh = gpV @ tf.linalg.adjoint(V)
-        dmdloss = tf.norm(gp - gpVVh, ord='fro', axis=[-2, -1])/tf.math.sqrt(tf.cast(self.batch_size*(self.window-1), dtype=self.precision))
+        dmdloss = tf.norm(gp - gpVVh, ord='fro', axis=[-2, -1])/tf.math.sqrt(tf.cast(self.batch_size*(winsize-1), dtype=self.precision))
 
         # Build reconstruction
-        phiinit = phi[:, ::(self.window-1)]
+        phiinit = phi[:, ::(winsize-1)]
         initconds = tf.cast(tf.transpose(tf.squeeze(Y[:, :, 0])), dtype=self.precision_complex)
         sigp, Up, Vp = tf.linalg.svd(phiinit, compute_uv=True, full_matrices=False)
         sigp_inv = tf.cast(tf.linalg.diag(1.0 / sigp), dtype=self.precision_complex)
         kmat = initconds @ Vp @ sigp_inv @ tf.linalg.adjoint(Up)
-        recon = tf.reshape(tf.transpose(tf.math.real(kmat @ phi)), [self.batch_size, self.window-1, self.phys_dim])
+        recon = tf.reshape(tf.transpose(tf.math.real(kmat @ phi)), [self.batch_size, winsize-1, self.phys_dim])
         return recon, evals, evecs, phi, dmdloss
 
     def get_config(self):

@@ -30,13 +30,12 @@ class LossDLDMD(keras.losses.Loss):
 
     def call(self, model, obs):
         """
-            model = [y, x_ae, x_adv, y_adv_real, weights, evals, evecs, phi, dmdloss]
+            model = [x_ae, x_adv, y_adv_real, weights, evals, evecs, phi, dmdloss]
         """
-        y = tf.identity(model[0])
-        x_ae = tf.identity(model[1])
-        x_adv = tf.identity(model[2])
-        weights = model[4]
-        dmdloss = model[8]
+        x_ae = tf.identity(model[0])
+        x_adv = tf.identity(model[1])
+        weights = model[3]
+        dmdloss = model[7]
         obs_windowed = obs[:, :(self.window-1), :]
         # Autoencoder reconstruction
         self.loss_recon = tf.reduce_mean(MSE(obs_windowed, x_ae))

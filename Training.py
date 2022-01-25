@@ -18,6 +18,9 @@ def train_model(hyp_params, train_data, val_set, model, loss):
     train_params['train_loss_results'] = []
     train_params['val_loss_results'] = []
     train_params['val_loss_comps_avgs'] = []
+    # Variables to control adaptive number of observables routine below
+    max_win_stp = 1
+    num_time_steps = int(hyp_params['num_time_steps'])
 
     # Set optimizer
     if hyp_params['optimizer'] == 'adam':
@@ -30,12 +33,10 @@ def train_model(hyp_params, train_data, val_set, model, loss):
         epoch_start_time = dt.datetime.now()
         epoch_time = time.time()
         epoch_loss_avg_train = tf.keras.metrics.Mean()
-        epoch_loss_avg_val = tf.keras.metrics.Mean()
 
         # Shuffle, batch, and prefetch training data to the GPU
         train_set = train_data.shuffle(hyp_params['num_train_init_conds']) \
             .batch(hyp_params['batch_size'], drop_remainder=True)
-        #train_set = train_set.prefetch(tf.data.AUTOTUNE)
         try:
             train_set = train_set.prefetch(tf.data.AUTOTUNE)
         except:
@@ -53,22 +54,44 @@ def train_model(hyp_params, train_data, val_set, model, loss):
                 epoch_loss_avg_train.update_state(train_loss)
 
             # Batch validation
+            init_num_obsvs = model.num_observables
+            min_loss = 1e6
             lrecon = tf.keras.metrics.Mean()
             lpred = tf.keras.metrics.Mean()
             ldmd = tf.keras.metrics.Mean()
-            for val_batch in val_set:
-                val_pred = model(val_batch)
-                val_loss = loss(val_pred, val_batch)
-                epoch_loss_avg_val.update_state(val_loss)
-                # Save loss components for diagnostic plotting
-                lrecon.update_state(np.log10(loss.loss_recon))
-                lpred.update_state(np.log10(loss.loss_pred))
-                ldmd.update_state(np.log10(loss.loss_dmd))
+            # Use batch validation to determine optimal number of observables for this epoch
+            for num_obsvs in range(init_num_obsvs - max_win_stp, init_num_obsvs + max_win_stp + 1):
+                model.num_observables = num_obsvs
+                model.window = num_time_steps - (num_obsvs - 1)
+                loss.num_observables = num_obsvs
+                loss.window = num_time_steps - (num_obsvs - 1)
+                epoch_loss_avg_val = tf.keras.metrics.Mean()
+                for val_batch in val_set:
+                    val_pred = model(val_batch)
+                    val_loss = loss(val_pred, val_batch)
+                    epoch_loss_avg_val.update_state(val_loss)
+                avg_val_loss = epoch_loss_avg_val.result()
+                if avg_val_loss.numpy() < min_loss:
+                    min_loss = avg_val_loss.numpy()
+                    num_obsvs_opt = num_obsvs
+                    min_avg_val_loss = avg_val_loss
+
+            model.num_observables = num_obsvs_opt
+            model.window = num_time_steps - (num_obsvs_opt - 1)
+            loss.num_observables = num_obsvs_opt
+            loss.window = num_time_steps - (num_obsvs_opt - 1)
+
+            # Save loss components for diagnostic plotting.  Note,  needs to be tweaked due to changing
+            # number of observables, but will train regardless.
+
+            lrecon.update_state(np.log10(loss.loss_recon))
+            lpred.update_state(np.log10(loss.loss_pred))
+            ldmd.update_state(np.log10(loss.loss_dmd))
             train_params['val_loss_comps_avgs'].append([lrecon.result(), lpred.result(), ldmd.result()])
 
         # Report training status
         train_params['train_loss_results'].append(np.log10(epoch_loss_avg_train.result()))
-        train_params['val_loss_results'].append(np.log10(epoch_loss_avg_val.result()))
+        train_params['val_loss_results'].append(np.log10(min_avg_val_loss))
         print("Epoch {epoch} of {max_epoch} / Train {train:3.7f} / Val {test:3.7f} / LR {lr:2.7f} / {time:4.2f} seconds"
               .format(epoch=epoch, max_epoch=hyp_params['max_epochs'],
                       train=train_params['train_loss_results'][-1],
