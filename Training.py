@@ -90,8 +90,8 @@ def train_model(hyp_params, train_data, val_set, model, loss):
             train_params['val_loss_comps_avgs'].append([lrecon.result(), lpred.result(), ldmd.result()])
 
         # Report training status
-        train_params['train_loss_results'].append(np.log10(epoch_loss_avg_train.result()))
-        train_params['val_loss_results'].append(np.log10(min_avg_val_loss))
+        train_params['train_loss_results'].append(np.ma.log10(epoch_loss_avg_train.result()))
+        train_params['val_loss_results'].append(np.ma.log10(min_avg_val_loss))
         print("Epoch {epoch} of {max_epoch} / Train {train:3.7f} / Val {test:3.7f} / LR {lr:2.7f} / {time:4.2f} seconds"
               .format(epoch=epoch, max_epoch=hyp_params['max_epochs'],
                       train=train_params['train_loss_results'][-1],

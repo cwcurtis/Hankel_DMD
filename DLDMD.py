@@ -94,7 +94,7 @@ class DLDMD(keras.Model):
         # Model weights
         weights = self.trainable_weights
 
-        return [x_ae, x_adv, y_adv, weights, evals, evecs, phi, dmdloss]
+        return [y, x_ae, x_adv, y_adv, weights, evals, evecs, phi, dmdloss]
 
     def edmd(self, Y):
         Y_m = Y[:, :, :-1]
@@ -142,13 +142,15 @@ class DLDMD(keras.Model):
         sig, U, V = tf.linalg.svd(gm, compute_uv=True, full_matrices=False)
         sigr_inv = tf.linalg.diag(1.0 / sig)
         Uh = tf.linalg.adjoint(U)
-        A = gp @ V @ sigr_inv @ Uh
+        gpV = gp @ V
+        A = gpV @ sigr_inv @ Uh
+
         evals, evecs = tf.linalg.eig(A)
         phi = tf.linalg.solve(evecs, tf.cast(gm, dtype=self.precision_complex))
 
-        gpV = gp @ V
-        gpVVh = gpV @ tf.linalg.adjoint(V)
-        dmdloss = tf.norm(gp - gpVVh, ord='fro', axis=[-2, -1])/tf.math.sqrt(tf.cast(self.batch_size*(winsize-1), dtype=self.precision))
+        normgp = tf.norm(gp, ord='fro', axis=[-2, -1])
+        normgpv = tf.norm(gpV, ord='fro', axis=[-2, -1])
+        dmdloss = tf.math.sqrt(normgp**2. - normgpv**2.)/tf.math.sqrt(tf.cast(self.batch_size*(winsize-1), dtype=self.precision))
 
         # Build reconstruction
         phiinit = phi[:, ::(winsize-1)]
